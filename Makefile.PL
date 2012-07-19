@@ -6,7 +6,7 @@ WriteMakefile
     NAME              => 'IO::Socket::DNS',
     VERSION_FROM      => 'lib/IO/Socket/DNS.pm', # finds $VERSION
     PREREQ_PM         => {
-      Net::DNS        => 0.62,
+      Net::DNS        => 0.67,
     },
     EXE_FILES         => [
         "bin/dnsc",
