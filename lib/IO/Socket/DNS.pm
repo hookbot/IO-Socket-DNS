@@ -285,7 +285,7 @@ sub TIEHANDLE {
                 if ($status == $INVALID_PASS) {
                     require POSIX;
                     warn "IO::Socket::DNS Password incorrect.\n";
-                    $! == POSIX::EACCES();
+                    $! = POSIX::EACCES();
                 }
                 else {
                     $! = $status;
