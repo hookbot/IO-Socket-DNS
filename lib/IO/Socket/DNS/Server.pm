@@ -9,7 +9,7 @@ use IO::Socket::DNS;
 use base qw(Net::DNS::Nameserver);
 use Data::Dumper; # Only for debugging
 
-our $VERSION = '0.020';
+our $VERSION = '0.021';
 
 # Maximum number of bytes to try to encode into the response packet
 our $MAX_RETURN = 100;
