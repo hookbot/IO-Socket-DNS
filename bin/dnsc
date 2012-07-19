@@ -185,6 +185,7 @@ while (1) {
     my $io = new IO::Socket::DNS
         PeerHost => $peerhost,
         PeerPort => $peerport,
+        Password => $opt{password},
         Suffix => $suffix,
             or die "connect: $peerhost:$peerport: Failed $!\n";
     print "Connected to $peerhost.\n";
