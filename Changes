@@ -1,5 +1,8 @@
 Revision history for Perl extension IO::Socket::DNS.
 
+0.021  Thu Jul 19 2012
+ - Implement password access functionality
+
 0.020  Thu May 03 2012
  - Compatibilty with CentOS 6 installation paths.
 
