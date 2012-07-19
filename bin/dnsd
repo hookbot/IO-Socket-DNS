@@ -153,6 +153,7 @@ Step 6. Test it from the outside
  (If all is good, it should show you some unzipper perl code.)
 
  $ export DNS_SUFFIX=d.example.com
+ $ export DNS_PASSWORD=SeCrEt
  $ bin/dnsssh 127.0.0.1
  (If all is good, it will SSH into your server in Step #2.)
 
@@ -166,7 +167,7 @@ Rob Brown, E<lt>bbb@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011 by Rob Brown
+Copyright (C) 2011-2012 by Rob Brown
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.9 or,
