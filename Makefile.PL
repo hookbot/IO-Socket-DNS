@@ -11,6 +11,9 @@ WriteMakefile
     EXE_FILES         => [
         "bin/dnsc",
         "bin/dnsd",
+        "bin/dnsnetcat",
+        "bin/dnstelnet",
+        "bin/dnsssh",
     ],
     ABSTRACT_FROM  => 'lib/IO/Socket/DNS.pm', # retrieve abstract from module
     AUTHOR => 'Rob Brown <bbb@cpan.org>',

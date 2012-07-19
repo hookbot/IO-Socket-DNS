@@ -9,7 +9,7 @@ use IO::Socket::DNS;
 use base qw(Net::DNS::Nameserver);
 use Data::Dumper; # Only for debugging
 
-our $VERSION = '0.019';
+our $VERSION = '0.020';
 
 # Maximum number of bytes to try to encode into the response packet
 our $MAX_RETURN = 100;
@@ -792,7 +792,7 @@ sub dnsc_code {
     my $self = shift;
     my $Suffix = $self->{"Suffix"};
     my $code = undef;
-    foreach my $try (qw(bin/dnsc /bin/dnsc /usr/bin/dnsc)) {
+    foreach my $try (qw(bin/dnsc /bin/dnsc /usr/bin/dnsc /usr/local/bin/dnsc)) {
         if (open my $fh, "<$try") {
             local $/ = undef;
             $code = <$fh>;
@@ -819,7 +819,7 @@ sub dnsnc_code {
     my $self = shift;
     my $Suffix = $self->{"Suffix"};
     my $code = undef;
-    foreach my $try (qw(bin/dnsnetcat /bin/dnsnetcat /usr/bin/dnsnetcat)) {
+    foreach my $try (qw(bin/dnsnetcat /bin/dnsnetcat /usr/bin/dnsnetcat /usr/local/bin/dnsnetcat)) {
         if (open my $fh, "<$try") {
             local $/ = undef;
             $code = <$fh>;
@@ -842,7 +842,7 @@ sub dnsssh_code {
     my $self = shift;
     my $Suffix = $self->{"Suffix"};
     my $code = undef;
-    foreach my $try (qw(bin/dnsssh /bin/dnsssh /usr/bin/dnsssh)) {
+    foreach my $try (qw(bin/dnsssh /bin/dnsssh /usr/bin/dnsssh /usr/local/bin/dnsssh)) {
         if (open my $fh, "<$try") {
             local $/ = undef;
             $code = <$fh>;

@@ -5,7 +5,7 @@ use warnings;
 use Carp qw(croak);
 use base qw(Tie::Handle);
 
-our $VERSION = '0.019';
+our $VERSION = '0.020';
 
 our $count = 0;
 # DNS Encoding is simply Base32 encoding using the following alphabet:

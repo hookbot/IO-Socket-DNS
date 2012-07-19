@@ -1,5 +1,8 @@
 Revision history for Perl extension IO::Socket::DNS.
 
+0.020  Thu May 03 2012
+ - Compatibilty with CentOS 6 installation paths.
+
 0.019  Sat Jul 30 2011
  - Compatibilty fixes for various versions of Perl and
    various platforms, such as Linux, Mac, Windows.
