@@ -42,13 +42,15 @@ world.
 Default is port 53 but requires super user to bind.
 You can specify a high port >= 1024 if you do not wish
 to run dnsd as root, but then you'll need to setup some
-kind of forwarder the same as is required for the
+kind of forwarder to that same port as is required for the
 --listen_ip option since normal DNS traffic always uses
 port 53.
 
 =head2 --password <password>
 
-Use this to reduce chances of undesired moochers. No default.
+Use this to reduce chances of undesired proxy moochers.
+This can be any string up to 8 characters.
+Default is no password.
 
 =head2 --verbose
 
