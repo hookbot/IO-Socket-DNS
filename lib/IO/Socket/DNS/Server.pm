@@ -52,6 +52,7 @@ sub new {
         or croak "Suffix is required";
     my $suffix = $args{Suffix} = lc $args{Suffix};
     $args{"Verbose"} ||= 0;
+    $args{"Password"} = $ENV{DNS_PASSWORD} || $args{Password} || "";
     $args{"SOA"} ||= do {
         my $res = $args{net_dns} ||= eval {
             require Net::DNS::Resolver::Recurse;
@@ -160,11 +161,16 @@ sub ReplyHandler {
                 $ans = $line_num ? $codes_array_ref->[$line_num - 1] : scalar @$codes_array_ref if $line_num <= @$codes_array_ref;
             }
             # Check for TCP SYN Request
-            elsif ($qname =~ /^([a-z0-9\-\.]+)\.t(\d+)\.(\w+)\.0\.$suffix$/) {
+            elsif ($qname =~ /^([a-z0-9\-\.]+)\.t(\d+)\.(\w+)\.(0|z[0-9a-f]{26})\.$suffix$/i) {
                 my $peerhost = $1;
                 my $peerport = $2;
                 my $ephid    = $3;
-                if (my $prev = $self->{"_proxy"}->{$ephid}) {
+                my $code     = $4;
+                if ($code ne $self->encrypt($peerhost, $peerport)) {
+                    $IO::Socket::DNS::INVALID_PASS or die "Implementation fail: Sentinal value missing?";
+                    $ans = "$ephid.$IO::Socket::DNS::INVALID_PASS";
+                }
+                elsif (my $prev = $self->{"_proxy"}->{$ephid}) {
                     $ans = "$ephid.0.$prev->{next_seqid}";
                     if (my $sent = $prev->{"sent"}) {
                         my $banner = $self->dnsencode($sent);
@@ -863,6 +869,7 @@ CODE
 
 sub dnsencode { goto &IO::Socket::DNS::dnsencode; }
 sub dnsdecode { goto &IO::Socket::DNS::dnsdecode; }
+sub encrypt   { goto &IO::Socket::DNS::encrypt; }
 
 sub loop_once {
     my $self = shift;
@@ -959,7 +966,9 @@ The "NotifyHandler" code ref is the handler for NS_NOTIFY (RFC1996) queries.
 This is just passed through to Net::DNS::Nameserver, but it is not required.
 
 The "Password" setting is to ensure only approved IO::Socket::DNS
-clients can connect to this server.
+clients can connect to this server. Only the first 8 characters are used.
+This setting may also be passed via the DNS_PASSWORD environment variable.
+Default is no password.
 
 If "Verbose" is specified, additional diagnostic information will be sent to STDOUT.
 
@@ -970,7 +979,7 @@ If "Verbose" is specified, additional diagnostic information will be sent to STD
     SOA       => "199.200.201.202",
     LocalAddr => "192.168.100.2",
     LocalPort => 5353,
-    Password  => "OnlyGeeksAllowed",
+    Password  => "No Geeks",
     Verbose   => 6,
   ) or die "connect: $!";
 
