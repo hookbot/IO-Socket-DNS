@@ -6,7 +6,7 @@ dnstelnet - Wrapper script for IO::Socket::DNS
 
 =head1 SYNOPSIS
 
-  dnstelnet --suffix=DNS_Suffix <host> <port>
+  dnstelnet --suffix=DNS_Suffix --password=<PASSWORD> <host> <port>
 
 =head1 DESCRIPTION
 
@@ -17,7 +17,7 @@ using the telnet command.
 
 =head1 EXAMPLE
 
-  dnstelnet --suffix=d.example.com cpan.mx.develooper.com 25
+  dnstelnet --suffix=d.example.com --password=SeCrEt cpan.mx.develooper.com 25
 
 =head1 SEE ALSO
 
@@ -29,7 +29,7 @@ Rob Brown, E<lt>bbb@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011 by Rob Brown
+Copyright (C) 2011-2012 by Rob Brown
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.9 or,
@@ -42,7 +42,7 @@ use IO::Socket;
 
 $ENV{DNS_SUFFIX} ||= do { my $try = "DNS_Suffix"; $try =~ /\./ ? $try : ""; };
 my $suffix = $ENV{DNS_SUFFIX};
-
+my $passwd = $ENV{DNS_PASSWORD};
 my @args = @ARGV;
 
 for (my $i = 0; $i < @args; $i++) {
@@ -56,9 +56,20 @@ for (my $i = 0; $i < @args; $i++) {
         $suffix = $s;
         $i--;
     }
+    if ($args[$i] =~ /^\-\-?pa[^=]*=?(.*)/) {
+        # Detect option --password=...
+        my $s = $1;
+        splice(@args, $i, 1);
+        if (!length $s) {
+            ($s) = splice(@args, $i, 1);
+        }
+        $passwd = $s;
+        $i--;
+    }
 }
 
-$suffix or die "Tunnel DNS Suffix must be specified\n";
+$ENV{DNS_SUFFIX} = $suffix or die "Tunnel DNS Suffix must be specified\n";
+$ENV{DNS_PASSWORD} = $passwd if $passwd;
 my $host = shift @args or die "Specify the host or IP to connect to.\n";
 my $port = shift @args;
 if (!$port) {
