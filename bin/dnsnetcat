@@ -69,7 +69,7 @@ for (my $i = 0; $i < @args; $i++) {
 }
 
 $suffix or die "Tunnel DNS Suffix must be specified\n";
-$ENV{DNS_PASSWORD} = $passwd if $passwd;
+$ENV{DNS_PASSWORD} = $passwd || '';
 my $host = shift @args or die "Specify the host or IP to connect to.\n";
 my $port = shift @args;
 if (!$port) {
@@ -101,7 +101,11 @@ if (!$proxy_pid) {
     open STDIN,  "</dev/null";
     open STDOUT, ">/dev/null";
     open STDERR, ">/dev/null";
-    exec $dnsc, "--suffix",$suffix, "--listen",$proxy_port, $host, $port or die "exec: $dnsc: $!";
+    exec $dnsc,
+        "--suffix", $suffix,
+        "--password", $passwd,
+        "--listen",$proxy_port,
+        $host, $port or die "exec: $dnsc: $!";
 }
 
 # Wait a bit for the proxy server to turn on
