@@ -1,5 +1,15 @@
 Revision history for Perl extension IO::Socket::DNS.
 
+0.018  Wed Jul 13 2011
+ - Minor tweaks to get the distro to PASS.
+ - Rename dnsvpnc to dnsc.
+ - Rename dnsvpnd to dnsd.
+ - Add TXT entry for master dns suffix to help provide
+   easier instructions for those poor people that don't
+   yet have Internet access due to their crippled WiFi.
+ - Add an interactive menu asking what to do.
+ - Add the common "ssh" functionality to the loader menu.
+
 0.017  Sun Jul 11 2011
  - Documental changes.
  - Cleaned up some heavy debugging.

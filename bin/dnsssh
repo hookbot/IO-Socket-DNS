@@ -6,7 +6,7 @@ dnsssh - Wrapper script for dnsc and ssh
 
 =head1 SYNOPSIS
 
-  dnsssh --suffix=<DNS_Suffix> [ssh_options] [user@]hostname [command]
+  dnsssh --suffix=DNS_Suffix [ssh_options] [user@]hostname [command]
 
 =head1 DESCRIPTION
 

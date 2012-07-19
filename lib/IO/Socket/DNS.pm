@@ -5,7 +5,7 @@ use warnings;
 use Carp qw(croak);
 use base qw(Tie::Handle);
 
-our $VERSION = '0.017';
+our $VERSION = '0.018';
 
 our $count = 0;
 # DNS Encoding is simply Base32 encoding using the following alphabet:
@@ -403,12 +403,13 @@ It translates TCP connection packets into DNS queries. So now
 you can finally reach that external SSH server you've been
 needing to reach, even though your Internet connection is too
 crippled to connect to it directly. Actually, you can connect
-to any TCP server, such as a Web server or a Squid proxy or
-even a remote SOCKS server. The client module IO::Socket::DNS
-communicates with the server module IO::Socket::DNS::Server
-to tunnel the connection for the client using only DNS
-queries as its transport. The only thing that the Internet
-Service Provider will see is a bunch of DNS queries.
+to any TCP server, such as a Web server or an SMTP server or
+a Squid proxy or even a remote SOCKS server.
+This client module IO::Socket::DNS communicates with the
+server module IO::Socket::DNS::Server to tunnel the connection
+for the client using only DNS queries as its transport.
+The only thing that the Internet Service Provider will see is
+a bunch of DNS queries.
 
 Be aware that this is much slower than full Internet access.
 This is only intended for proof of concept or emergency use.
@@ -449,7 +450,8 @@ and bind to that instead of the 127.0.0.1 default, i.e.:
 
 =head2 3. Configure Network Settings on browser
 
-On Firefox
+On Firefox:
+
   => Options
   => Advanced
   => Network
@@ -482,7 +484,7 @@ The "Password" setting is to prove to the server that you are authorized to use 
 If "Verbose" is specified, additional diagnostic information will be sent to STDERR.
 
 The "Suffix" argument must be a real domain name or subdomain
-that points to an IP running the IO::Socket::DNS::Server instance.
+that is delegated to an IP running the IO::Socket::DNS::Server instance.
 The environment variable DNS_SUFFIX may also be used to define this setting.
 This is required.
 

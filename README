@@ -30,8 +30,8 @@ DESCRIPTION
     finally reach that external SSH server you've been needing to reach,
     even though your Internet connection is too crippled to connect to it
     directly. Actually, you can connect to any TCP server, such as a Web
-    server or a Squid proxy or even a remote SOCKS server. The client module
-    IO::Socket::DNS communicates with the server module
+    server or an SMTP server or a Squid proxy or even a remote SOCKS server.
+    This client module IO::Socket::DNS communicates with the server module
     IO::Socket::DNS::Server to tunnel the connection for the client using
     only DNS queries as its transport. The only thing that the Internet
     Service Provider will see is a bunch of DNS queries.
@@ -70,9 +70,15 @@ SOCKS
       ssh -D192.168.0.101:1080 -p2222 $USER@127.0.0.1
 
   3. Configure Network Settings on browser
-    On Firefox => Options => Advanced => Network => Settings => [X] Manual
-    proxy configuration => SOCKS Host: 192.168.0.101 Port: 1080 (or whatever
-    IP:Port used for -D in step 2) => [OK]
+    On Firefox:
+
+      => Options
+      => Advanced
+      => Network
+      => Settings
+      => [X] Manual proxy configuration
+      => SOCKS Host: 192.168.0.101 Port: 1080 (or whatever IP:Port used for -D in step 2)
+      => [OK]
 
     Then surf away.
 
@@ -98,8 +104,8 @@ CONSTRUCTOR
     If "Verbose" is specified, additional diagnostic information will be
     sent to STDERR.
 
-    The "Suffix" argument must be a real domain name or subdomain that
-    points to an IP running the IO::Socket::DNS::Server instance. The
+    The "Suffix" argument must be a real domain name or subdomain that is
+    delegated to an IP running the IO::Socket::DNS::Server instance. The
     environment variable DNS_SUFFIX may also be used to define this setting.
     This is required.
 

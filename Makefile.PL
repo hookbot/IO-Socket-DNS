@@ -9,8 +9,8 @@ WriteMakefile
       Net::DNS        => 0.62,
     },
     EXE_FILES         => [
-        "bin/dnsvpnc",
-        "bin/dnsvpnd",
+        "bin/dnsc",
+        "bin/dnsd",
     ],
     ABSTRACT_FROM  => 'lib/IO/Socket/DNS.pm', # retrieve abstract from module
     AUTHOR => 'Rob Brown <bbb@cpan.org>',

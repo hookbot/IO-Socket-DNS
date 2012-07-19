@@ -5,22 +5,29 @@ use warnings;
 use Carp qw(croak);
 use IO::Socket;
 use IO::Select;
+use IO::Socket::DNS;
 use base qw(Net::DNS::Nameserver);
 use Data::Dumper; # Only for debugging
 
-our $VERSION = do { require IO::Socket::DNS; $IO::Socket::DNS::VERSION };
-# '0.011';
+our $VERSION = '0.018';
 
 # Maximum number of bytes to try to encode into the response packet
 our $MAX_RETURN = 100;
 
 # Probe "z" timeout for TCP socket reading (in seconds)
-our $PROBE_TIMEOUT = 0.2;
+our $PROBE_TIMEOUT = 0.1;
 
 # No semi-colon allowed in TXT value
 # No non-printing characters nor newlines allowed
-our $loader = q{"perl -MNet::DNS -e 'eval [Net::DNS::Resolver->new->query(qw(unzip.$suffix TXT))->answer]->[0]->txtdata or warn $@'"};
-our $loader2 = q{"while(++$a and $b=eval{[Net::DNS::Resolver->new->query(qq<unzip$a.$suffix>,'TXT')->answer]->[0]->txtdata}){$_.=$b}$_=pack'H*',$_ and eval"};
+our $TXT = {
+    ""      => q{"dig +short TXT loader.$suffix"},
+    loader  => q{"perl -MNet::DNS -e 'eval [Net::DNS::Resolver->new->query(qw(unzip.$suffix TXT))->answer]->[0]->txtdata or warn $@'"},
+    unzip   => q{"while(++$a and $b=eval{[Net::DNS::Resolver->new->query(qq(menu$a.$suffix),'TXT')->answer]->[0]->txtdata}){$_.=$b}eval pack'H*',$_"},
+    menu0   => "menu_code",
+    client0 => "client_code",
+    dnsc0   => "dnsc_code",
+    dnsssh0 => "dnsssh_code",
+};
 
 # new
 sub new {
@@ -116,23 +123,27 @@ sub ReplyHandler {
         $aa = 1;
         if ($qtype eq "TXT") {
             my $ans = "";
-            if ($qname eq $suffix) {
-                $ans = "host -ttxt loader.$suffix";
-            }
-            elsif ($qname eq "loader.$suffix") {
-                $ans = $loader;
+            if ($qname =~ /^([a-z]*)\.?$suffix/ and
+                my $static = $TXT->{$1}) {
+                $ans = $static;
                 $ans =~ s/\$suffix/$suffix/g;
             }
-            elsif ($qname eq "unzip.$suffix") {
-                $ans = $loader2;
-                $ans =~ s/\$suffix/$suffix/g;
-            }
-            elsif ($qname =~ /^(unzip|module|client)(\d+)\.$suffix$/) {
-                my $chunker = $1;
-                my $line = $2;
-                my $method = $chunker."_code";
-                my $code = $self->$method;
-                $ans = $code->[$line-1];
+            elsif ($qname =~ /^([a-z]+)(\d+)\.$suffix$/ and
+                   my $method = $TXT->{$1."0"}) {
+                my $line_num = $2;
+                my $codes_array_ref = $self->{$method} ||= eval {
+                    my $code = $self->$method;
+                    warn "DEBUG: $method string=[$code]\n" if $self->{"Verbose"};
+                    my @encode = ();
+                    while ($code =~ s/^(.{1,100})//s) {
+                        my $chunk = $1;
+                        push @encode, unpack "H*", $chunk;
+                    }
+                    warn Dumper [ code_array => \@encode ] if $self->{"Verbose"};
+                    return \@encode;
+                } || [];
+
+                $ans = $codes_array_ref->[$line_num - 1] if $line_num <= @$codes_array_ref;
             }
             # Check for TCP SYN Request
             elsif ($qname =~ /^([a-z0-9\-\.]+)\.T(\d+)\.(\w+)\.0\.$suffix$/i) {
@@ -349,113 +360,138 @@ sub gen_seqid {
     return $seqid;
 }
 
-sub unzip_code {
+sub menu_code {
     my $self = shift;
-    return $self->{"unzip_code"} ||= eval {
-        my $suffix = $self->{"Suffix"};
-        my $code = "";
-        # Make sure IO::Socket::DNS module is available
-        # If not, download it and try again
-        # Download, save, and run launcher client app
-        $code = q{
-            $a="";$b="";
-            use strict;
-            use FindBin qw($Bin);
-            chdir $Bin if $Bin;
-            push @INC, "lib";
-            my $run = "dnsc.pl";
-            require Net::DNS::Resolver;
-            my $res = new Net::DNS::Resolver;
-            if (!eval "require IO::Socket::DNS" or $IO::Socket::DNS::VERSION ne "$VERSION") {
-                mkdir "lib", 0755;
-                mkdir "lib/IO", 0755;
-                mkdir "lib/IO/Socket", 0755;
-                my $i = 0;
-                my $contents = "";
-                warn "Downloading lib/IO/Socket/DNS.pm ...\n";
-                while (++$i and my $txt = eval{[$res->query("module$i.$suffix",'TXT')->answer]->[0]->txtdata}) {
-                    $contents .= $txt;
-                }
-                $contents = pack 'H*', $contents;
-                if ($contents) {
-                    open my $fh, ">lib/IO/Socket/DNS.pm";
-                    print $fh $contents;
-                }
+    my $suffix = $self->{"Suffix"};
+
+    # Short Menu Program
+    my $code = q{
+        $| = 1;
+        print qq{MENU:\n0. Just print version and exit.\n1. Download IO::Socket::DNS module.\n2. Download dnsc proxy client software.\n3. Download dnsssh client software.\n4. Run ssh tunneled through dns now.\nPlease make your selection: [0] };
+        $a="";$b="";
+        use strict;
+        use warnings;
+
+        my $choice = <STDIN>;
+        $choice =~ s/\s+$// if defined $choice;
+        print "\n\n";
+        if (!$choice or $choice < 1 or $choice > 4) {
+            print "IO::Socket::DNS VERSION $VERSION\n";
+            exit;
+        }
+
+        my $files = [
+            # Query      File                      Mode
+            [ client => "lib/IO/Socket/DNS.pm"  => 0644 ],
+            [ dnsc   => "dnsc.pl"               => 0755 ],
+            [ dnsssh => "dnsssh.pl"             => 0755 ],
+        ];
+
+        use FindBin qw($Bin);
+        if ($Bin) {
+            chdir $Bin;
+            unshift @INC, "$Bin/lib";
+        }
+        else {
+            unshift @INC, "lib";
+        }
+
+        require Net::DNS::Resolver;
+        my $res = new Net::DNS::Resolver;
+        my $install = sub {
+            my ($txt,$file,$mode) = @_;
+            my $dir = "";
+            while ($file =~ m{([^/]+)/}g) {
+                $dir .= $1;
+                mkdir $dir, 0755;
+                $dir .= "/";
             }
-            if (!-e $run) {
-                my $i = 0;
-                my $contents = "";
-                warn "Downloading $run ...\n";
-                while (++$i and my $txt = eval{[$res->query("client$i.$suffix",'TXT')->answer]->[0]->txtdata}) {
-                    $contents .= $txt;
-                }
-                $contents = pack 'H*', $contents;
-                if ($contents) {
-                    open my $fh, ">$run";
-                    unless ($contents =~ s{^\#\!/\S+}{\#\!$^X}) {
+            my $i = 0;
+            my $contents = "";
+            print "Downloading $file ...\n";
+            while (++$i and my $txt = eval{[$res->query("$txt$i.$suffix",'TXT')->answer]->[0]->txtdata}) {
+                $contents .= $txt;
+            }
+            $contents = pack 'H*', $contents;
+            if ($contents) {
+                open my $fh, ">", $file;
+                if ($file =~ /\.pl$/) {
+                    unless ($contents =~ s{^\#\!/\S+}{\#\!/usr/bin/env $^X}) {
                         print $fh "#!$^X\n";
                     }
-                    print $fh $contents;
                 }
+                print $fh $contents;
             }
-            if (!-x $run) {
-                chmod 0755, $run;
-            }
-            if (-x $run) {
-                exec "./$run";
-            }
-            else {
-                warn "$run: Unable to launch unzipper bootstrap code.\n";
-            }
-            exit;
+            chmod $mode, $file;
+            return 1;
         };
-        $code =~ s/\$suffix/$suffix/g;
-        $code =~ s/\$VERSION/$IO::Socket::DNS::VERSION/;
-        $code =~ s/\s+/ /g;
-        my @code = ();
-        warn "DEBUG: code_string=[$code]\n" if $self->{"Verbose"};
-        while ($code =~ s/^(.{1,100})//s) {
-            my $chunk = $1;
-            push @code, unpack "H*", $chunk;
-        }
-        warn Dumper [ code_array => \@code ];
-        return \@code;
-    };
-}
 
-sub module_code {
-    my $self = shift;
-    return $self->{"module_code"} ||= do {
-        warn "DEBUG: Loading [$INC{'IO/Socket/DNS.pm'}] ...\n" if $self->{"Verbose"};
-        open my $fh, $INC{"IO/Socket/DNS.pm"} or die "IO/Socket/DNS.pm loaded but not found?";
-        my $code = join "", <$fh>;
-        close $fh;
-        my @code = ();
-        warn "DEBUG: module_code_string=[$code]\n" if $self->{"Verbose"};
-        while ($code =~ s/^(.{1,100})//s) {
-            my $chunk = $1;
-            push @code, unpack "H*", $chunk;
+        for (my $i=0;$i<@$files;$i++) {
+            if ($i<$choice) {
+                my ($txt,$file,$mode) = @{ $files->[$i] };
+                if ($i) {
+                    # Don't bother downloading if it's already here.
+                    next if -e $file;
+                }
+                else {
+                    if (eval "require IO::Socket::DNS" and
+                        $IO::Socket::DNS::VERSION eq "$VERSION") {
+                        # Don't bother downloading if it's the same.
+                        next;
+                    }
+                }
+                $install->($txt,$file,$mode);
+            }
         }
-        #warn Dumper [ code_array => \@code ];
-        \@code;
+
+        if ($choice == 4) {
+            # Pretent like regular ssh
+            if (-x "dnsssh.pl") {
+                print "Enter arguments for ssh:\n";
+                print "ssh ";
+                my $args = <STDIN>;
+                chomp $args;
+                #$ENV{DNS_SUFFIX} = "$suffix";
+                exec "./dnsssh.pl --suffix=$suffix $args";
+            }
+            die "dnsssh.pl: Unable to launch fake ssh client: $!\n";
+        }
+        exit;
     };
+    # Strip comments
+    $code =~ s/\s+\#.*//g;
+    # Fake interpolate $suffix
+    $code =~ s/\$suffix/$suffix/g;
+    # Jam true VERSION
+    $code =~ s/\$VERSION/$IO::Socket::DNS::VERSION/g;
+    # Collapse to reduce transport code
+    $code =~ s/\s+/ /g;
+    return $code;
 }
 
 sub client_code {
     my $self = shift;
+    warn "DEBUG: Loading [$INC{'IO/Socket/DNS.pm'}] ...\n" if $self->{"Verbose"};
+    open my $fh, $INC{"IO/Socket/DNS.pm"} or die "IO/Socket/DNS.pm loaded but not found?";
+    my $code = join "", <$fh>;
+    close $fh;
+    return $code;
+}
+
+sub dnsc_code {
+    my $self = shift;
     my $Suffix = $self->{"Suffix"};
-    return $self->{"client_code"} ||= do {
-        my $code = undef;
-        foreach my $try (qw(bin/dnsc /bin/dnsc /usr/bin/dnsc)) {
-            if (open my $fh, "<$try") {
-                local $/ = undef;
-                $code = <$fh>;
-                last;
-            }
+    my $code = undef;
+    foreach my $try (qw(bin/dnsc /bin/dnsc /usr/bin/dnsc)) {
+        if (open my $fh, "<$try") {
+            local $/ = undef;
+            $code = <$fh>;
+            last;
         }
-        if (!$code) {
-            warn "WARNING! Unable to locate the real dnsc client??\n";
-            $code = <<'CODE';
+    }
+    if (!$code) {
+        warn "WARNING! Unable to locate the real dnsc code??\n";
+        $code = <<'CODE';
 use strict;
 use lib qw(lib);
 use IO::Socket::DNS;
@@ -464,16 +500,32 @@ print "The IO::Socket::DNS client module has been downloaded correctly\n";
 print "But the server was unable to locate the real dnsc source.\n";
 print "In order to try again, you should first remove myself: rm $0\n";
 CODE
+    }
+    $code =~ s/DNS_Suffix/$Suffix/g;
+    return $code;
+}
+
+sub dnsssh_code {
+    my $self = shift;
+    my $Suffix = $self->{"Suffix"};
+    my $code = undef;
+    foreach my $try (qw(bin/dnsssh /bin/dnsssh /usr/bin/dnsssh)) {
+        if (open my $fh, "<$try") {
+            local $/ = undef;
+            $code = <$fh>;
+            last;
         }
-        $code =~ s/DNS_Suffix/$Suffix/g;
-        my @code = ();
-        warn "DEBUG: client_code_string=[$code]\n" if $self->{"Verbose"};
-        while ($code =~ s/^(.{1,100})//s) {
-            my $chunk = $1;
-            push @code, unpack "H*", $chunk;
-        }
-        \@code;
-    };
+    }
+    if (!$code) {
+        warn "WARNING! Unable to locate the real dnsssh code??\n";
+        $code = <<'CODE';
+use strict;
+print "Unable to locate the real dnsssh source.\n";
+print "In order to try again, you should first remove myself: rm $0\n";
+CODE
+    }
+    $code =~ s/DNS_Suffix/$Suffix/g;
+    return $code;
 }
 
 sub dnsencode { goto &IO::Socket::DNS::dnsencode; }
