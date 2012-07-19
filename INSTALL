@@ -1,0 +1,33 @@
+INSTALLATION
+============
+
+To install this module type the following:
+
+   perl Makefile.PL
+   make
+   make test
+   make install
+
+CLIENT DEPENDENCIES
+
+The client only requires Net::DNS to be installed.
+Actually, this module (IO::Socket::DNS) does not even need to be
+installed for the client to operate. It can bootstrap itself by
+downloading the module through DNS queries to the server.
+
+See "perldoc dnsc" for more details.
+
+SERVER DEPENDENCIES
+
+1. The server requires Net::DNS 0.62 or higher and this module.
+
+2. You will need access to a real domain or at least access to be
+able to delegate a domain for a real domain away to the server.
+
+3. You also probably need root access on another server in order to
+bind to port 53 which is a privileged low port.
+
+4. You will probably also need a dedicated IP or at least be able
+to forward the specified sub zone to the IO::Socket::DNS::Server.
+
+See "perldoc dnsd" for more details.

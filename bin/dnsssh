@@ -1,0 +1,142 @@
+#!/usr/bin/perl -w
+
+=head1 NAME
+
+dnsssh - Wrapper script for dnsc and ssh
+
+=head1 SYNOPSIS
+
+  dnsssh --suffix=<DNS_Suffix> [ssh_options] [user@]hostname [command]
+
+=head1 DESCRIPTION
+
+The --suffix is the DNS Suffix delegated to the dnsd server.
+If none is specified from commandline, then the DNS_SUFFIX
+environment variable is used.
+This setting is required.
+
+The optional [ssh_options] are passed to the real ssh command.
+
+Special attention has been taken for the "-p" option and the
+"hostname" arguments in order to tunnel properly, but everything
+should function like the normal ssh program.
+
+=head1 CAVEATS
+
+The "ssh" client must exist in the path.
+This utility does not re-implement the entire SSH protocol.
+It just calls dnsc and ssh with the proper arguments for you.
+
+I disabled Strict Host Checking to avoid conflicts with
+previous invocations and to reduce bloating up of useless
+entries into your known_hosts file.
+But it will always claim it "Permanently added" the host.
+
+=head1 SEE ALSO
+
+dnsc, dnsd, ssh
+
+=head1 AUTHOR
+
+Rob Brown, E<lt>bbb@cpan.orgE<gt>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2011 by Rob Brown
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.8.9 or,
+at your option, any later version of Perl 5 you may have available.
+
+=cut
+
+use strict;
+use IO::Socket;
+
+my $suffix = $ENV{DNS_SUFFIX};
+my $host = undef;
+my $port = 22;
+
+my @args = @ARGV;
+
+for (my $i = 0; $i < @args; $i++) {
+    if ($args[$i] =~ /^\-\-?su[^=]*=?(.*)/) {
+        # Detect option --suffix=...
+        my $s = $1;
+        splice(@args, $i, 1);
+        if (!length $s) {
+            ($s) = splice(@args, $i, 1);
+        }
+        $suffix = $s;
+        $i--;
+    }
+    elsif ($args[$i] =~ /^\-p(.*)/) {
+        # Detect option: -p port
+        my $p = $1;
+        splice(@args, $i, 1);
+        if (!length $p) {
+            ($p) = splice(@args, $i, 1);
+        }
+        if ($p !~ /^\d+$/) {
+            die "Bad port '$p': Please use only numbers\n";
+        }
+        $port = $p;
+        $i--;
+    }
+    elsif (!$host && $args[$i] =~ /^[^\-\@]/) {
+        # Detect [user@]hostname
+        warn "DEBUG: Found [user\@]hostname ($args[$i])\n";
+        if ($args[$i] =~ s/^(\S+@|)(.+)$/${1}127.0.0.1/) {
+            $host = $2;
+        }
+        else {
+            die "Unable to extract hostname setting\n";
+        }
+        warn "DEBUG: Stripped host=[$host] Left=[$args[$i]]\n";
+        $i--;
+    }
+}
+
+$suffix or die "Tunnel DNS Suffix must be specified\n";
+$port or die "Unable to determine which port you want to connect to.\n";
+$host or exec "ssh" or die "exec: ssh: $!";
+
+my $dnsc = $0;
+if ($dnsc =~ s/dnsssh/dnsc/) {
+    if (-x $dnsc) {
+        print "Using proxy program: $dnsc ...\n";
+    }
+    else {
+        die "Unable to find dnsc client proxy software\n";
+    }
+}
+else {
+    die "$dnsc: Unimplemented invocation.\n";
+}
+
+# Just choose any available ephemeral port and reuse it
+my $proxy_port = IO::Socket::INET->new(Listen => 1)->sockport
+    or die "Unable to choose a proxy port: $!\n";
+print "Using proxy_port $proxy_port ...\n";
+my $proxy_pid = fork;
+if (!$proxy_pid) {
+    # Child process #1
+    # Start up the proxy client invisibly
+    open STDIN,  "</dev/null";
+    open STDOUT, ">/dev/null";
+    open STDERR, ">/dev/null";
+    exec $dnsc, "--suffix",$suffix, "--listen",$proxy_port, $host, $port
+        or die "exec: $dnsc: $!";
+}
+
+# Wait a bit for the proxy server to turn on
+sleep 2;
+# Run the actual ssh program
+my @run = ("ssh",
+    -p => $proxy_port,
+    -o => "UserKnownHostsFile=/dev/null",
+    -o => "StrictHostKeyChecking=no",
+    @args
+);
+warn "[$$] RUNNING [@run] ...\n";
+exec @run or die "exec: ssh: $!";

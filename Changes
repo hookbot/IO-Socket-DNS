@@ -1,0 +1,33 @@
+Revision history for Perl extension IO::Socket::DNS.
+
+0.017  Sun Jul 11 2011
+ - Documental changes.
+ - Cleaned up some heavy debugging.
+ - Replace shebang in download script with actual $^X
+ - Fix TIEHANDLE definitions to allow I/O methods to
+   operate on the object more directly instead of
+   having to glob hash de-reference every time.
+ - Reduce exponential backoff rate to speed responsiveness.
+ - Initial add of awesome dnsssh convenience utility.
+
+0.016  Fri Jun 24 2011
+ - Convert dnstelnet to just be a wrapper around dnsc and
+   just run the real telnet program instead.
+
+0.015  Thu Jun 23 2011
+ - Allow bootstrap importation of dnsc from server so this
+   can still be used on the client without even having to
+   install IO::Socket::DNS on the client.
+
+0.013  Thu Jun 23 2011
+ - Handle large response packets upon initial port connection.
+
+0.012  Wed Jun 22 2011
+  - IO::Socket::DNS::Server can now autodetect authority IP.
+  - Created dnsc and dnsd convenience scripts.
+
+0.011  Sat Jun 18 2011
+  - Barely functioning version for proof or concept.
+
+0.01   Tue Jun 14 2011
+  - Original version; created by h2xs 1.23
