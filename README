@@ -99,7 +99,8 @@ CONSTRUCTOR
     preceding it with a ":". The "PeerPort" must be in numeric form.
 
     The "Password" setting is to prove to the server that you are authorized
-    to use it.
+    to use it. The environment variable DNS_PASSWORD may also be used to
+    define this setting. Default is no password.
 
     If "Verbose" is specified, additional diagnostic information will be
     sent to STDERR.
