@@ -14,6 +14,9 @@ our $a32 = [0..9, "a".."w"];
 # Max number of bytes to send in each DNS query
 our $MAX_WRITE = 100;
 
+# Sentinel value meaning "Incorrect Password"
+our $INVALID_PASS = 999;
+
 # new
 # This just returns the tie'd file handle
 sub new {
@@ -137,6 +140,18 @@ sub dnsdecode {
     return $decode;
 }
 
+sub encrypt {
+    my $self = shift;
+    my $host = shift;
+    my $port = shift;
+    my $pass = $self->{Password} or return "0";
+    # Get rid of NUL chars:
+    my $code = "$host:$port" ^ $pass | "\x80" x 8;
+    # One way crypt:
+    my $dig = crypt($code, $host);
+    return "z".unpack H26 => $dig;
+}
+
 # pending( [$timeout] )
 # Check if there are any bytes pending ready for reading
 # $timeout specifies maximum number of seconds to wait for data.
@@ -245,7 +260,7 @@ sub TIEHANDLE {
     #$self->{IdleTimeout} ||= 60;
     $self->{Buffer_R} = "";
     $self->{Buffer_W} = "";
-
+    $self->{Password} = $ENV{DNS_PASSWORD} || $self->{Password};
     my $suffix = $self->suffix
         or croak "Suffix must be specified";
 
@@ -257,7 +272,9 @@ sub TIEHANDLE {
     }
 
     # Send SYN packet
-    my $name = lc("$self->{PeerAddr}").".T$self->{PeerPort}.$id.0.$suffix.";
+    my $peer = lc("$self->{PeerAddr}");
+    my $code = $self->encrypt($peer, $self->{PeerPort});
+    my $name = "$peer.T$self->{PeerPort}.$id.$code.$suffix.";
     warn "DEBUG: querying for [$name]\n" if $self->{Verbose};
     require POSIX;
     if (my $txt = eval { $self->TXT_resolver->($name) } ) {
@@ -265,7 +282,14 @@ sub TIEHANDLE {
         if ($txt =~ s/^$id\.(\d+)//) {
             my $status = $1;
             if ($status) {
-                $! = $status;
+                if ($status == $INVALID_PASS) {
+                    require POSIX;
+                    warn "IO::Socket::DNS Password incorrect.\n";
+                    $! == POSIX::EACCES();
+                }
+                else {
+                    $! = $status;
+                }
                 return;
             }
             # Connected perfectly. Need to grab magic sequence ID
@@ -542,6 +566,8 @@ The "PeerPort" specification can also be embedded in the "PeerAddr" by preceding
 The "PeerPort" must be in numeric form.
 
 The "Password" setting is to prove to the server that you are authorized to use it.
+The environment variable DNS_PASSWORD may also be used to define this setting.
+Default is no password.
 
 If "Verbose" is specified, additional diagnostic information will be sent to STDERR.
 
