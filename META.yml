@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                IO-Socket-DNS
-version:             0.018
+version:             0.019
 abstract:            IO::Socket like interface using DNS to access an IO::Socket::DNS::Server backend.
 license:             ~
 author:              

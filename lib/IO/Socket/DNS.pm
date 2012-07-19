@@ -5,7 +5,7 @@ use warnings;
 use Carp qw(croak);
 use base qw(Tie::Handle);
 
-our $VERSION = '0.018';
+our $VERSION = '0.019';
 
 our $count = 0;
 # DNS Encoding is simply Base32 encoding using the following alphabet:
@@ -40,12 +40,69 @@ sub suffix {
     return $self->{Suffix};
 }
 
-sub resolver {
+sub TXT_resolver {
     my $self = shift;
-    return ($self->{net_dns} ||= eval {
-        my @args = $self->{Resolver} ? ($self->{Resolver}) : ();
+    return $self->{resolver_txt} ||= eval {
         require Net::DNS::Resolver;
-        return Net::DNS::Resolver->new(@args);
+    } ? sub {
+        my $name = shift;
+        # Faster method, but Net::DNS must be installed for this to work.
+        return eval { [$self->resolver->query($name, "TXT")->answer]->[0]->txtdata };
+    } : do {
+        my %args = $self->resolver_args;
+        my $nameservers = $args{nameservers};
+        if ($nameservers) {
+            $nameservers = [split m/ /, $nameservers] if !ref $nameservers;
+        }
+        $nameservers ||= [""];
+        warn "WARNING: Unable to find Net::DNS so reverting to nslookup (slow spawn) method ...\n";
+        # Return a closure containing the lexically scoped $nameservers variable.
+        sub {
+            my $name = shift;
+            # Make sure it is rooted to reduce unnecessary search scanning.
+            $name =~ s/\.*$/./;
+            # Try each resolver (if specified) until one works.
+            foreach my $server (@$nameservers) {
+                # Yes, it's slower, but is likely to work even if Net::DNS is gone.
+                if (`nslookup -type=TXT $name $server 2>&1`=~/"(.+)"/) {
+                    return $1;
+                }
+            }
+            return undef;
+        };
+    };
+};
+
+sub resolver_args {
+    my $self = _obj(shift);
+    my @args = !$self->{Resolver} ? ()
+        : !ref($self->{Resolver}) ? (nameservers => $self->{Resolver})
+        : "ARRAY" eq ref($self->{Resolver}) ? (@{ $self->{Resolver} })
+        : "HASH"  eq ref($self->{Resolver}) ? (@{ %{ $self->{Resolver} } })
+        : ();
+    return @args;
+}
+
+sub resolver {
+    my $self = _obj(shift);
+    return ($self->{net_dns} ||= eval {
+        require Net::DNS::Resolver;
+        return Net::DNS::Resolver->new($self->resolver_args);
+    } || eval {
+        # Try emergency "nslookup"
+        my $suffix = $self->suffix;
+        my $try = `nslookup -type=TXT nslookup.$suffix 2>&1`;
+        if ($try =~ /"(.+)"/) {
+            my $shell = $1;
+            $shell =~ s/\bperl\b/$^X/g;
+            system $shell;
+            warn "Reloading Net::DNS ...\n";
+            delete $INC{"Net/DNS.pm"};
+            delete $INC{"Net/DNS/Resolver.pm"};
+            require Net::DNS::Resolver;
+            return $self->resolver;
+        }
+        return undef;
     } or do {
         warn  "Unable to obtain resolver. Please pass in your own net_dns setting: $@";
         exit 1;
@@ -113,7 +170,7 @@ sub pending {
             $name .= "z";
         }
         $name .= ".".$self->suffix;
-        if (my $txt = eval { [$self->resolver->query($name, "TXT")->answer]->[0]->txtdata }) {
+        if (my $txt = eval { $self->TXT_resolver->($name) } ) {
             warn "DEBUG: TXT=[$txt]\n" if $self->{Verbose};
             if ($txt =~ /^$seqid\b/) {
                 # Found relevant response
@@ -203,7 +260,7 @@ sub TIEHANDLE {
     my $name = lc("$self->{PeerAddr}").".T$self->{PeerPort}.$id.0.$suffix.";
     warn "DEBUG: querying for [$name]\n" if $self->{Verbose};
     require POSIX;
-    if (my $txt = eval { [$self->resolver->query($name, "TXT")->answer]->[0]->txtdata }) {
+    if (my $txt = eval { $self->TXT_resolver->($name) } ) {
         warn "DEBUG: SYN=[$txt]\n" if $self->{Verbose};
         if ($txt =~ s/^$id\.(\d+)//) {
             my $status = $1;
@@ -342,8 +399,13 @@ sub close {
     my $self = _obj(shift);
     my $suffix = $self->suffix;
     if (my $seqid = delete $self->{seqid}) {
+        my $name = "$seqid.x.$suffix";
         eval {
-            $self->resolver->bgsend("$seqid.x.$suffix", "TXT");
+            require Net::DNS::Resolver;
+            $self->resolver->bgsend($name, "TXT");
+            1;
+        } or eval {
+            $self->TXT_resolver->($name);
         };
         return 1;
     }

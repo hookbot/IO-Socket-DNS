@@ -14,6 +14,11 @@ WriteMakefile
     ],
     ABSTRACT_FROM  => 'lib/IO/Socket/DNS.pm', # retrieve abstract from module
     AUTHOR => 'Rob Brown <bbb@cpan.org>',
+    dist          => {
+        DIST_DEFAULT => 'all tardist',
+        COMPRESS     => 'gzip -vf',
+        SUFFIX       => '.gz',
+    },
     ;
 
 package MY;

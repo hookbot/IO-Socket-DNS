@@ -143,6 +143,7 @@ GetOptions
     "verbose+",
     ;
 
+$ENV{DNS_SUFFIX} ||= do { my $try = "DNS_Suffix"; $try =~ /\./ ? $try : ""; };
 my $suffix = $opt{suffix} || $ENV{DNS_SUFFIX} or die "Usage> $0 --suffix=DNS_Suffix [options] --listen=[listen_ip:]listen_port remote_host [remote_port]\n";
 my $peerhost = shift or die "Specify the host or IP (and port) to connect to.\n";
 my $peerport = shift;

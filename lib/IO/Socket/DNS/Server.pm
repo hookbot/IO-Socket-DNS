@@ -9,7 +9,7 @@ use IO::Socket::DNS;
 use base qw(Net::DNS::Nameserver);
 use Data::Dumper; # Only for debugging
 
-our $VERSION = '0.018';
+our $VERSION = '0.019';
 
 # Maximum number of bytes to try to encode into the response packet
 our $MAX_RETURN = 100;
@@ -18,15 +18,27 @@ our $MAX_RETURN = 100;
 our $PROBE_TIMEOUT = 0.1;
 
 # No semi-colon allowed in TXT value
-# No non-printing characters nor newlines allowed
+# No non-printing characters allowed
+# No newlines allowed
+# No backslash allowed
+# No double quotes allowed because it will be enclosed later
 our $TXT = {
-    ""      => q{"dig +short TXT loader.$suffix"},
-    loader  => q{"perl -MNet::DNS -e 'eval [Net::DNS::Resolver->new->query(qw(unzip.$suffix TXT))->answer]->[0]->txtdata or warn $@'"},
-    unzip   => q{"while(++$a and $b=eval{[Net::DNS::Resolver->new->query(qq(menu$a.$suffix),'TXT')->answer]->[0]->txtdata}){$_.=$b}eval pack'H*',$_"},
+    ""      => q{dig +short TXT loader.$suffix},
+    netdns  => q{{$b=chr(34)}while(++$a&&`nslookup -type=TXT netdns$a.$suffix. 2>&1`=~/$b([0-9a-f]+)$b/){$_.=$1} eval pack'H*',$_ or warn $@},
+    netdns0 => "netdns_code",
+    loader  => q{echo eval pack q/N6/,0x60404152,0x4756603d,0x7e2f2228,0x2e2a2922,0x2f3b6576,0x616c2431 | perl - nslookup -type=TXT unzip.$suffix.},
+    unzip   => q{{$b=chr(34)}while(++$a&&`nslookup -type=TXT unzip$a.$suffix. 2>&1`=~/$b([0-9a-f]+)$b/){$_.=$1} eval pack'H*',$_ or warn qq{$_:$@}},
+    unzip0  => "unzip_code",
+    menu    => q{while(++$a and $b=eval{[Net::DNS::Resolver->new->query(qq(menu$a.$suffix),'TXT')->answer]->[0]->txtdata}){$_.=$b}eval pack'H*',$_ or warn$@},
     menu0   => "menu_code",
     client0 => "client_code",
     dnsc0   => "dnsc_code",
     dnsssh0 => "dnsssh_code",
+    dnsnc0  => "dnsnc_code",
+    # No double nor single quotes nor dollar sign nor backticks nor any shell metas allowed for this
+    # special "nslookup" value in order to function under different environments and OSes and shells,
+    # including Linux, Mac, Win32, Cygwin, Windows, DOS, CMD.EXE, bash, tcsh, csh, ksh, zsh, etc.
+    nslookup=> q{echo eval pack q/N6/,0x60404152,0x4756603d,0x7e2f2228,0x2e2a2922,0x2f3b6576,0x616c2431 | perl - nslookup -type=TXT netdns.$suffix.},
 };
 
 # new
@@ -118,6 +130,7 @@ sub ReplyHandler {
     my ($qname, $qclass, $qtype, $peerhost, $query, $conn) = @_;
     my ($rcode, @ans, @auth, @add, $aa);
 
+    $qname =~ y/A-Z/a-z/;
     warn "DEBUG: Q: $qname $qtype (from $peerhost)...\n" if $self->{"Verbose"};
     if ($qname =~ /(^|\.)$suffix/) {
         $aa = 1;
@@ -125,14 +138,15 @@ sub ReplyHandler {
             my $ans = "";
             if ($qname =~ /^([a-z]*)\.?$suffix/ and
                 my $static = $TXT->{$1}) {
-                $ans = $static;
+                $ans = qq{"$static"};
                 $ans =~ s/\$suffix/$suffix/g;
             }
-            elsif ($qname =~ /^([a-z]+)(\d+)\.$suffix$/ and
+            elsif ($qname =~ /^([a-z\-]+)(\d+)\.$suffix$/ and
                    my $method = $TXT->{$1."0"}) {
+                my $prefix = $1;
                 my $line_num = $2;
-                my $codes_array_ref = $self->{$method} ||= eval {
-                    my $code = $self->$method;
+                my $codes_array_ref = $self->{"_code_array_cache_$prefix"} ||= eval {
+                    my $code = ref($method) eq "CODE" ? $method->($self,$prefix) : $self->$method($prefix);
                     warn "DEBUG: $method string=[$code]\n" if $self->{"Verbose"};
                     my @encode = ();
                     while ($code =~ s/^(.{1,100})//s) {
@@ -143,10 +157,10 @@ sub ReplyHandler {
                     return \@encode;
                 } || [];
 
-                $ans = $codes_array_ref->[$line_num - 1] if $line_num <= @$codes_array_ref;
+                $ans = $line_num ? $codes_array_ref->[$line_num - 1] : scalar @$codes_array_ref if $line_num <= @$codes_array_ref;
             }
             # Check for TCP SYN Request
-            elsif ($qname =~ /^([a-z0-9\-\.]+)\.T(\d+)\.(\w+)\.0\.$suffix$/i) {
+            elsif ($qname =~ /^([a-z0-9\-\.]+)\.t(\d+)\.(\w+)\.0\.$suffix$/) {
                 my $peerhost = $1;
                 my $peerport = $2;
                 my $ephid    = $3;
@@ -220,8 +234,8 @@ sub ReplyHandler {
                 #warn Dumper DEBUG => [ full_tcp => $self->{_tcp}, _proxy => $self->{_proxy}, ] if $self->{"Verbose"};
             }
             # Check for SEND
-            elsif (($qname =~ /^([0-9a-w]{6})\.(\d+)\.([0-9a-w.]+)\.$suffix$/i && $2 == length($3)) ||
-                   $qname =~ /^([0-9a-w]{6})\.()([xz])\.$suffix$/i and
+            elsif (($qname =~ /^([0-9a-w]{6})\.(\d+)\.([0-9a-w.]+)\.$suffix$/ && $2 == length($3)) ||
+                   $qname =~ /^([0-9a-w]{6})\.()([xz])\.$suffix$/ and
                    my $proxy = $self->{"_proxy"}->{$1}) {
                 my $seqid   = $1;
                 my $encoded = $3;
@@ -323,7 +337,7 @@ sub ReplyHandler {
         }
         elsif ($qtype =~ /^(A|CNAME)$/) {
             my $me = $self->{SOA};
-            my $alias = "please.use.dig.TXT.$suffix.instead";
+            my $alias = "please-use-TXT-instead-of-$qtype-when-looking-up.loader.$suffix";
             if ($qname =~ /^(dns\.|)\Q$suffix\E$/) {
                 push @ans, Net::DNS::RR->new("$qname 60 $qclass A $me");
             }
@@ -334,8 +348,8 @@ sub ReplyHandler {
                 push @add, Net::DNS::RR->new("dns.$suffix 60 $qclass A $me");
             }
             else {
-                push @ans, Net::DNS::RR->new("$qname 1 $qclass CNAME $alias");
-                push @ans, Net::DNS::RR->new("$alias 1 $qclass CNAME dns.$suffix");
+                push @ans, Net::DNS::RR->new("$qname 10 $qclass CNAME $alias");
+                push @ans, Net::DNS::RR->new("$alias 10 $qclass CNAME dns.$suffix");
                 push @add, Net::DNS::RR->new("dns.$suffix 60 $qclass A $me");
             }
             push @auth, Net::DNS::RR->new("$suffix 60 $qclass NS dns.$suffix");
@@ -360,22 +374,237 @@ sub gen_seqid {
     return $seqid;
 }
 
+sub netdns_code {
+    my $self = shift;
+    my $suffix = $self->{"Suffix"};
+    my $LOADER = $TXT->{"loader"};
+    $LOADER =~ s/"(.+)"/$1/;
+    my @modules = ();
+    my $net_dns_handler = sub {
+        my $self = shift;
+        my $me = shift or die "netdns module is required";
+        my $full_path = $self->{"_netdns_map"}->{$me} or die "$me: Installed handler, but no map?";
+        warn "DEBUG: Loading [$full_path] ...\n" if $self->{"Verbose"};
+        open my $fh, "<", $full_path or die "$full_path: Found in \%INC but unable to read?";
+        my $code = "";
+        while (<$fh>) {
+            last if /^__END__/;
+            $code .= $_;
+        }
+        close $fh;
+        return $code;
+    };
+    # This is just a hack to allow a Non-Win32 server to still
+    # download Win32.pm in case it is needed by a Win32 client:
+    eval { require Net::DNS::Resolver::Win32 };
+    foreach my $mod (sort keys %INC) {
+        if ($mod =~ m{^Net/DNS}) {
+            push @modules, $mod;
+            my $p = lc $mod;
+            $p =~ s/\.pm//;
+            $p =~ s{/+}{-}g;
+            $p =~ y/0-9//d;
+            my $full_path = $INC{$mod};
+            my $method = $p."0";
+            print "INSTALLING HANDLER: $p\$n.$suffix => $full_path\n" if $self->{"Verbose"};
+            $self->{"_netdns_map"}->{$p} = $full_path;
+            $TXT->{$method} = $net_dns_handler;
+        }
+    }
+    my $MODULES = "@modules";
+
+    # Short Program to bootstrap Net::DNS onto the client
+    my $code = q{
+        use strict;
+        # Hot flush STDOUT
+        $| = 1;
+        unshift @INC, "lib";
+        # Stub program for testing purposes just for now.
+        print "Loading Net::DNS::* modules through nslookup via netdns.$suffix ...\n";
+        my @modules = qw($MODULES);
+        my $downloaded = 0;
+        foreach my $mod (@modules) {
+            print "Testing: $mod ...\n";
+            my $pre = lc $mod;
+            $pre =~ s/\.pm//;
+            $pre =~ s{/+}{-}g;
+            $pre =~ y/0-9//d;
+            my $file = "lib/$mod";
+            if (eval "require '$mod'") {
+                # Module loaded fine
+            }
+            elsif (-s $file) {
+                # File already exists
+                print "$file: File exists so refusing to download again.\n";
+            }
+            else {
+                warn "FAILED: $@";
+                my $dir = "";
+                while ($file =~ m{([^/]+)/}g) {
+                    $dir .= $1;
+                    mkdir $dir, 0755;
+                    $dir .= "/";
+                }
+                my $i = 0;
+                my $contents = "";
+                print "Downloading $file ...\n";
+                $downloaded++;
+                my $ticks = 0;
+                while (1) {
+                    `nslookup -type=TXT $pre$i.$suffix 2>&1` =~ /"(.+)"/ or
+                    warn("**CHOKE1** $pre$i\n") && sleep(1) && `nslookup -type=TXT $pre$i.$suffix 2>&1` =~ /"(.+)"/ or
+                    warn("**CHOKE2** $pre$i\n") && sleep(1) && `nslookup -type=TXT $pre$i.$suffix 2>&1` =~ /"(.+)"/;
+                    my $txt = $1 or last;
+                    if ($i) {
+                        $contents .= $txt;
+                        print sprintf "\r(%d/%d) %.1f%%", $i, $ticks, $i/$ticks*100;
+                    }
+                    elsif ($txt =~ /^\d+$/) {
+                        $ticks = $txt;
+                        print "\r0/$ticks";
+                    }
+                    else {
+                        die "$pre$i: Invalid DNS cache: $txt\n";
+                    }
+                    $i++;
+                    last if $i > $ticks;
+                }
+                print "\n";
+                if ($i<$ticks) {
+                    print "WARNING! Only downloaded $i/$ticks chunks do refusing to write $file\n";
+                    next;
+                }
+                $contents = pack 'H*', $contents;
+                if ($contents) {
+                    open my $fh, ">", $file or die "$file: open: $!";
+                    print $fh $contents;
+                    close $fh;
+                }
+            }
+        }
+
+        if ($downloaded) {
+            foreach my $mod (@modules) {
+                next if $mod =~ /Win32/ and $^O !~ /Win32/;
+                eval "require '$mod'" or die "$mod: Unable to download?: $@";
+            }
+        }
+        else {
+            warn "Congratulations! You already had Net::DNS installed.\n";
+        }
+        my $n = q{$LOADER};
+        $n =~ s/\bperl\b/$^X/g;
+        print "Now you are safe to run the following:\n\n$n\n\n";
+        exit;
+    };
+
+    # Strip comments
+    $code =~ s/\s+\#.*//g;
+    # Fake interpolate $LOADER
+    $code =~ s/\$LOADER/$LOADER/g;
+    # Fake inerpolate $MODULES
+    $code =~ s/\$MODULES/$MODULES/g;
+    # Fake interpolate $suffix
+    $code =~ s/\$suffix/$suffix/g;
+    # Jam true VERSION
+    $code =~ s/\$VERSION/$IO::Socket::DNS::VERSION/g;
+    # Collapse to reduce transport code
+    $code =~ s/\s+/ /g;
+    return $code;
+}
+
+sub unzip_code {
+    my $self = shift;
+    my $suffix = $self->{"Suffix"};
+
+    # Short program to CREATE the menu.pl program.
+    my $code = q{
+        $| = 1;
+        use strict;
+        use warnings;
+
+        my $interp = $^X;
+        if ($interp !~ m{[\\/]}) {
+            # Make fully qualified absolute search path
+            foreach my $path (split m/:/, $ENV{PATH}) {
+                my $try = "$path/$interp";
+                if (-e $try) {
+                    $interp = $try;
+                    last;
+                }
+            }
+        }
+
+        if (-e "menu.pl") {
+            print "File menu.pl already exists. You must remove it to regenerate a fresh copy.\n";
+        }
+        else {
+            print "Creating menu.pl ...\n";
+            open my $fh, ">", "menu.pl" or die "menu.pl: open: $!\n";
+            print $fh qq{\#!$interp -w\n};
+            print $fh q{
+                use strict;
+                print "Loading MENU. Please wait...\n";
+                my $res = eval {
+                    require Net::DNS::Resolver;
+                    Net::DNS::Resolver->new;
+                };
+                my $get_txt = $res ? sub {
+                    my $q = shift;
+                    # Fast method, but Net::DNS may not be installed.
+                    return eval{[$res->query($q,'TXT')->answer]->[0]->txtdata};
+                } : sub {
+                    my $q = shift;
+                    # Slower, but better than relying on Net::DNS to be installed.
+                    return $1 if `nslookup -type=TXT $q. 2>&1`=~/"(.+)"/;
+                    sleep 1;
+                    return $1 if `nslookup -type=TXT $q. 2>&1`=~/"(.+)"/;
+                    return undef;
+                };
+                $_="";
+                my $i=0;
+                while (++$i and my $b=$get_txt->("menu$i.$suffix")) {$_.=$b}
+                $_=pack 'H*', $_;
+                if (open my $fh, "+<", $0) {
+                    # Self modifying code to spead up future executions.
+                    print $fh "#!$^X -w\n";
+                    print $fh $_;
+                    close $fh;
+                    exit if 0 == system $0;
+                }
+                eval or warn "$_:$@";
+            };
+            close $fh;
+        }
+        chmod 0755, "menu.pl";
+        print "You can now run: ".($^O=~/Win32/i?"$interp -w ":"./")."menu.pl\n\n";
+        exit;
+    };
+    # Strip comments
+    $code =~ s/\s+\#.*//g;
+    # Fake interpolate $suffix
+    $code =~ s/\$suffix/$suffix/g;
+    # Collapse to reduce transport code
+    $code =~ s/\s+/ /g;
+    return $code;
+}
+
 sub menu_code {
     my $self = shift;
     my $suffix = $self->{"Suffix"};
 
     # Short Menu Program
     my $code = q{
+        use strict;
         $| = 1;
-        print qq{MENU:\n0. Just print version and exit.\n1. Download IO::Socket::DNS module.\n2. Download dnsc proxy client software.\n3. Download dnsssh client software.\n4. Run ssh tunneled through dns now.\nPlease make your selection: [0] };
-        $a="";$b="";
+        print qq{MENU:\n0. Just print version and exit.\n1. Download IO::Socket::DNS module.\n2. Download dnsc proxy client software.\n3. Download dnsnetcat client software.\n4. Download dnsssh client software.\n5. Run ssh tunneled through dns now.\n6. Install Net::DNS (optional for better performance)\nPlease make your selection: [0] };
         use strict;
         use warnings;
 
         my $choice = <STDIN>;
         $choice =~ s/\s+$// if defined $choice;
         print "\n\n";
-        if (!$choice or $choice < 1 or $choice > 4) {
+        if (!$choice or $choice < 1 or $choice > 6) {
             print "IO::Socket::DNS VERSION $VERSION\n";
             exit;
         }
@@ -384,6 +613,7 @@ sub menu_code {
             # Query      File                      Mode
             [ client => "lib/IO/Socket/DNS.pm"  => 0644 ],
             [ dnsc   => "dnsc.pl"               => 0755 ],
+            [ dnsnc  => "dnsnetcat.pl"          => 0755 ],
             [ dnsssh => "dnsssh.pl"             => 0755 ],
         ];
 
@@ -396,10 +626,29 @@ sub menu_code {
             unshift @INC, "lib";
         }
 
-        require Net::DNS::Resolver;
-        my $res = new Net::DNS::Resolver;
+        my $res = eval {
+            require Net::DNS::Resolver;
+            Net::DNS::Resolver->new;
+        };
+        my $get_txt = $res ? sub {
+            my $q = shift;
+            # Fast method, but Net::DNS may not be installed.
+            return eval{[$res->query($q,'TXT')->answer]->[0]->txtdata};
+        } : sub {
+            my $q = shift;
+            # Slower, but better than relying on Net::DNS
+            return $1 if `nslookup -type=TXT $q. 2>&1`=~/"(.+)"/;
+            warn "**CHOKE1** $q\n";
+            sleep 1;
+            return $1 if `nslookup -type=TXT $q. 2>&1`=~/"(.+)"/;
+            warn "**CHOKE2** $q\n";
+            sleep 1;
+            return $1 if `nslookup -type=TXT $q. 2>&1`=~/"(.+)"/;
+            warn "**CHOKE3** $q\n";
+            return undef;
+        };
         my $install = sub {
-            my ($txt,$file,$mode) = @_;
+            my ($pre,$file,$mode) = @_;
             my $dir = "";
             while ($file =~ m{([^/]+)/}g) {
                 $dir .= $1;
@@ -409,15 +658,40 @@ sub menu_code {
             my $i = 0;
             my $contents = "";
             print "Downloading $file ...\n";
-            while (++$i and my $txt = eval{[$res->query("$txt$i.$suffix",'TXT')->answer]->[0]->txtdata}) {
-                $contents .= $txt;
+            my $ticks = 0;
+            while (my $txt = $get_txt->("$pre$i.$suffix")) {
+                if ($i) {
+                    $contents .= $txt;
+                    print sprintf "\r(%d/%d) %.1f%%", $i, $ticks, $i/$ticks*100;
+                }
+                elsif ($txt =~ /^\d+$/) {
+                    $ticks = $txt;
+                    print "\r0/$ticks";
+                }
+                else {
+                    die "$pre$i: Invalid DNS cache: $txt\n";
+                }
+                $i++;
+                last if $i > $ticks;
             }
+            print "\n";
             $contents = pack 'H*', $contents;
             if ($contents) {
                 open my $fh, ">", $file;
                 if ($file =~ /\.pl$/) {
-                    unless ($contents =~ s{^\#\!/\S+}{\#\!/usr/bin/env $^X}) {
-                        print $fh "#!$^X\n";
+                    my $interp = $^X;
+                    if ($interp !~ m{[\\/]}) {
+                        # Make fully qualified absolute search path
+                        foreach my $path (split m/:/, $ENV{PATH}) {
+                            my $try = "$path/$interp";
+                            if (-e $try) {
+                                $interp = $try;
+                                last;
+                            }
+                        }
+                    }
+                    unless ($contents =~ s{^\#\!/\S+}{\#\!$interp}) {
+                        print $fh "#!$interp\n";
                     }
                 }
                 print $fh $contents;
@@ -425,6 +699,43 @@ sub menu_code {
             chmod $mode, $file;
             return 1;
         };
+
+        if ($choice == 6) {
+            if (eval {
+                require Net::DNS;
+                require Net::DNS::Resolver;
+            }) {
+                warn "Congratulations! Net::DNS already works for you: $INC{'Net/DNS.pm'}\n";
+            }
+            else {
+                my @PREREQ_PM = qw(
+                    IO::Socket
+                );
+                if ($^O eq "MSWin32") {
+                    push @PREREQ_PM, qw(
+                        Win32::Registry
+                        Win32::IPHelper
+                    );
+                }
+                my %broken = ();
+                foreach my $module (@PREREQ_PM) {
+                    if (!eval "require $module") {
+                        $broken{$module} = "$@";
+                    }
+                }
+                if (scalar keys %broken) {
+                    foreach my $broken (sort keys %broken) {
+                        warn "Unable to install Net::DNS without Prerequisite Module $broken: $broken{$broken}\n";
+                    }
+                    exit;
+                }
+                warn "Please wait while Net::DNS is downloaded and installed ...\n";
+                if (my $netdns = $get_txt->("netdns.$suffix")) {
+                    eval $netdns or warn $@;
+                }
+            }
+            exit;
+        }
 
         for (my $i=0;$i<@$files;$i++) {
             if ($i<$choice) {
@@ -444,14 +755,13 @@ sub menu_code {
             }
         }
 
-        if ($choice == 4) {
+        if ($choice == 5) {
             # Pretent like regular ssh
             if (-x "dnsssh.pl") {
                 print "Enter arguments for ssh:\n";
                 print "ssh ";
                 my $args = <STDIN>;
                 chomp $args;
-                #$ENV{DNS_SUFFIX} = "$suffix";
                 exec "./dnsssh.pl --suffix=$suffix $args";
             }
             die "dnsssh.pl: Unable to launch fake ssh client: $!\n";
@@ -498,6 +808,29 @@ use IO::Socket::DNS;
 our $suffix = shift || $ENV{DNS_SUFFIX} || "DNS_Suffix";
 print "The IO::Socket::DNS client module has been downloaded correctly\n";
 print "But the server was unable to locate the real dnsc source.\n";
+print "In order to try again, you should first remove myself: rm $0\n";
+CODE
+    }
+    $code =~ s/DNS_Suffix/$Suffix/g;
+    return $code;
+}
+
+sub dnsnc_code {
+    my $self = shift;
+    my $Suffix = $self->{"Suffix"};
+    my $code = undef;
+    foreach my $try (qw(bin/dnsnetcat /bin/dnsnetcat /usr/bin/dnsnetcat)) {
+        if (open my $fh, "<$try") {
+            local $/ = undef;
+            $code = <$fh>;
+            last;
+        }
+    }
+    if (!$code) {
+        warn "WARNING! Unable to locate the real dnsnetcat code??\n";
+        $code = <<'CODE';
+use strict;
+print "Unable to locate the real dnsnetcat source.\n";
 print "In order to try again, you should first remove myself: rm $0\n";
 CODE
     }

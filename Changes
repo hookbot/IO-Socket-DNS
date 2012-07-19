@@ -1,5 +1,24 @@
 Revision history for Perl extension IO::Socket::DNS.
 
+0.019  Sat Jul 30 2011
+ - Compatibilty fixes for various versions of Perl and
+   various platforms, such as Linux, Mac, Windows.
+ - Allow client to function even without Net::DNS.
+ - Add "nslookup" emergency spawn support so the client
+   IO::Socket::DNS no longer requires Net::DNS.
+ - Bootstrap all downloaded client software with its
+   specified DNS Suffix burnt into the program.
+ - Can now import Net::DNS from the server side via the
+   nslookup command: nslookup -type=TXT nslookup.SUFFIX
+ - For convenience, IO::Socket::DNS->resolver will now
+   automatically import Net::DNS on demand.
+ - Add dnsnetcat utility much like dnstelnet but allows
+   direct TCP I/O by using the real "nc" program.
+ - For security reasons, dnsssh now honors the normal
+   known_hosts and allows StrictHostKeyChecking again.
+ - Add download progress status to Menu so you don't
+   get as confused or bored waiting that first time.
+
 0.018  Wed Jul 13 2011
  - Minor tweaks to get the distro to PASS.
  - Rename dnsvpnc to dnsc.

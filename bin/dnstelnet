@@ -6,7 +6,7 @@ dnstelnet - Wrapper script for IO::Socket::DNS
 
 =head1 SYNOPSIS
 
-  dnstelnet <suffix> <host> <port>
+  dnstelnet --suffix=DNS_Suffix <host> <port>
 
 =head1 DESCRIPTION
 
@@ -17,7 +17,7 @@ using the telnet command.
 
 =head1 EXAMPLE
 
-  dnstelnet d.example.com cpan.mx.develooper.com 25
+  dnstelnet --suffix=d.example.com cpan.mx.develooper.com 25
 
 =head1 SEE ALSO
 
@@ -40,17 +40,36 @@ at your option, any later version of Perl 5 you may have available.
 use strict;
 use IO::Socket;
 
-my $suffix = shift || $ENV{DNS_SUFFIX} or die "Tunnel DNS Suffix must be specified\n";
-my $host = shift or die "Specify the host or IP to connect to.\n";
-my $port = shift;
+$ENV{DNS_SUFFIX} ||= do { my $try = "DNS_Suffix"; $try =~ /\./ ? $try : ""; };
+my $suffix = $ENV{DNS_SUFFIX};
+
+my @args = @ARGV;
+
+for (my $i = 0; $i < @args; $i++) {
+    if ($args[$i] =~ /^\-\-?su[^=]*=?(.*)/) {
+        # Detect option --suffix=...
+        my $s = $1;
+        splice(@args, $i, 1);
+        if (!length $s) {
+            ($s) = splice(@args, $i, 1);
+        }
+        $suffix = $s;
+        $i--;
+    }
+}
+
+$suffix or die "Tunnel DNS Suffix must be specified\n";
+my $host = shift @args or die "Specify the host or IP to connect to.\n";
+my $port = shift @args;
 if (!$port) {
     $port = $1 if $host =~ s/:(\d+)$//;
 }
+$port or die "Unable to determine which port you want to connect to.\n";
 
 my $dnsc = $0;
 if ($dnsc =~ s/dnstelnet/dnsc/) {
     if (-x $dnsc) {
-        print "Using proxy program: $dnsc ...\n";
+        warn "Using proxy program: $dnsc ...\n";
     }
     else {
         die "Unable to find dnsc client proxy software\n";
@@ -63,7 +82,7 @@ else {
 # Just choose any available ephemeral port and reuse it
 my $proxy_port = IO::Socket::INET->new(Listen => 1)->sockport
     or die "Unable to choose a proxy port: $!\n";
-print "Using proxy_port $proxy_port ...\n";
+warn "Using proxy_port $proxy_port ...\n";
 my $proxy_pid = fork;
 if (!$proxy_pid) {
     # Child process #1
