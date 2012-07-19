@@ -78,6 +78,8 @@ This may be specified multiple times to increase verbosity.
 
 =head1 EXAMPLES
 
+Here are some various independent usage examples:
+
 1. Forward a local connection 0.0.0.0:8080 to someproxy.com:8080
 out through the dnsd tunnel running on d.example.com:
   dnsc --suffix d.example.com someproxy.com 8080
@@ -105,6 +107,7 @@ And enable verbosity for fun:
 6. Act like there is an SSH server running here, but when someone
 connects to it, they end up on sshserver.com instead:
   export DNS_SUFFIX=d.example.com
+  export DNS_PASSWORD=SeCrEt
   sudo dnsc sshserver.com 22
 
 =head1 SEE ALSO
@@ -117,7 +120,7 @@ Rob Brown, E<lt>bbb@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011 by Rob Brown
+Copyright (C) 2011-2012 by Rob Brown
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.9 or,
