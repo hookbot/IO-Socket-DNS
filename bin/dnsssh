@@ -55,7 +55,7 @@ use IO::Socket;
 
 $ENV{DNS_SUFFIX} ||= do { my $try = "DNS_Suffix"; $try =~ /\./ ? $try : ""; };
 my $suffix = $ENV{DNS_SUFFIX};
-
+my $passwd = $ENV{DNS_PASSWORD};
 my @args = @ARGV;
 
 for (my $i = 0; $i < @args; $i++) {
@@ -69,9 +69,20 @@ for (my $i = 0; $i < @args; $i++) {
         $suffix = $s;
         $i--;
     }
+    if ($args[$i] =~ /^\-\-?pa[^=]*=?(.*)/) {
+        # Detect option --password=...
+        my $s = $1;
+        splice(@args, $i, 1);
+        if (!length $s) {
+            ($s) = splice(@args, $i, 1);
+        }
+        $passwd = $s;
+        $i--;
+    }
 }
 
 $suffix or die "Tunnel DNS Suffix must be specified\n";
+$ENV{DNS_PASSWORD} = $passwd || '';
 @args or exec "ssh" or die "exec: ssh: $!";
 
 my $dnsnc = $0;
